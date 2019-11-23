@@ -3,7 +3,7 @@ from torch import nn
 
 def init_weights(m):
     if type(m) == nn.Conv2d:
-        nn.init.xavier_uniform(m.weight)
+        nn.init.xavier_uniform_(m.weight)
 
 class Swish(nn.Module):
     def forward(self, x):
@@ -53,10 +53,10 @@ class Net(nn.Module):
         self.conv4 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
         self.pool4_avg = nn.AvgPool2d(kernel_size=4, stride=4, padding=0)
         self.pool4_max = nn.MaxPool2d(kernel_size=4, stride=4, padding=0)
-        nn.init.xavier_uniform(self.conv4.weight)
+        nn.init.xavier_uniform_(self.conv4.weight)
 
         self.clf = nn.Linear(128, 10)
-        nn.init.xavier_uniform(self.clf.weight)
+        nn.init.xavier_uniform_(self.clf.weight)
 
         
     def forward(self, input):
