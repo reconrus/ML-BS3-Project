@@ -10,6 +10,7 @@ from tqdm import tqdm
 from model import Net
 from loss import DiscrLoss
 from plots import plot_accuracies, plot_latent_space
+from tensorboard import Plotting
 
 
 device = torch.device("cuda")
@@ -72,6 +73,8 @@ def main():
     source_test_loader = DataLoader(svhn_test, batch_size=batch_size, shuffle=True, num_workers=1)
     target_train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=1)
     target_test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, num_workers=1)
+    
+    plotting = Plotting()
 
     model = Net().to(device)
     optim = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -94,21 +97,24 @@ def main():
             optim.step()
             epoch_loss += loss.item()
             train_iter.set_description(f'Loss: {epoch_loss/(step+1):.4f}')
+            plotting.add_feature_maps(feature_maps[-1], "svhn_pretraining")
 
         train_accuracy = test(source_train_loader, model)
         source_test_accuracy = test(source_test_loader, model)
         target_test_accuracy = test(target_test_loader, model)
-        train_accuracies.append(train_accuracy)
-        source_test_accuracies.append(source_test_accuracy)
-        target_test_accuracies.append(target_test_accuracy)
+        plotting.add_loss(epoch_loss, epoch + 1, "pretraining")
+        plotting.add_accuracies(train_accuracy, source_test_accuracy, target_test_accuracy, "pretraining")
+        # train_accuracies.append(train_accuracy)
+        # source_test_accuracies.append(source_test_accuracy)
+        # target_test_accuracies.append(target_test_accuracy)
         print(f"Epoch {epoch+1}: Training loss: {epoch_loss/len(source_train_loader)}")
         print(f"Epoch {epoch+1}: Test accuracy: {target_test_accuracy}")
         
         scheduler.step()
 
-        plot_latent_space(feature_maps[-1], "pretraining")
+        # plot_latent_space(feature_maps[-1], "pretraining")
 
-    plot_accuracies(pretrain_epochs, train_accuracies, source_test_accuracies, target_test_accuracies)
+    # plot_accuracies(pretrain_epochs, train_accuracies, source_test_accuracies, target_test_accuracies)
 
     clf_criterion = nn.CrossEntropyLoss()
     discr_criterion = DiscrLoss(weights=feature_maps_weights)
@@ -150,14 +156,18 @@ def main():
             epoch_loss += loss.item()
 
             train_iter.set_description(f'Classification loss: {epoch_clf_loss/(step+1):.4f} Discriminator loss: {epoch_discr_loss/(step+1):.4f} ')
-            plot_latent_space(s_feature_maps[-1], "training", t_feature_maps)
+            plotting.add_feature_maps(s_feature_maps[-1], "svhn")
+            plotting.add_feature_maps(t_feature_maps[-1], "mnist")
+            # plot_latent_space(s_feature_maps[-1], "training", t_feature_maps)
             
         train_accuracy = test(source_train_loader, model)
         source_test_accuracy = test(source_test_loader, model)
         target_test_accuracy = test(target_test_loader, model)
-        train_accuracies.append(train_accuracy)
-        source_test_accuracies.append(source_test_accuracy)
-        target_test_accuracies.append(target_test_accuracy)
+        plotting.add_loss(epoch_loss, epoch + 1, "training")
+        plotting.add_accuracies(train_accuracy, source_test_accuracy, target_test_accuracy, "training")
+        # train_accuracies.append(train_accuracy)
+        # source_test_accuracies.append(source_test_accuracy)
+        # target_test_accuracies.append(target_test_accuracy)
         
         print(f"Epoch {epoch+1}: Training classification loss: {epoch_clf_loss/len(source_train_loader)}")
         print(f"Epoch {epoch+1}: Training discriminator loss: {epoch_discr_loss/len(source_train_loader)}")
@@ -165,8 +175,8 @@ def main():
 
         scheduler.step()
         
-    plot_accuracies(epochs, train_accuracies, source_test_accuracies, target_test_accuracies)
-
+    # plot_accuracies(epochs, train_accuracies, source_test_accuracies, target_test_accuracies)
+    plotting.close()
 
 if __name__=='__main__':
     main()
