@@ -10,5 +10,5 @@ class DiscrLoss(nn.Module):
     def forward(self, maps_source, maps_dest):
         loss = torch.tensor(0, dtype=torch.float).cuda()
         for a1, a2, weight in zip(maps_source, maps_dest, self.weights):
-            loss += weight*torch.mean((a1 - a2)**2)
+            loss += weight*torch.mean((a1.mean(dim=0) - a2.mean(dim=0))**2)
         return loss

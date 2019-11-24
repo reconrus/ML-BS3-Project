@@ -65,19 +65,16 @@ class Net(nn.Module):
         x = self.layer1(input)        
         
         x = self.layer2(x)              
-        out2 = x.mean(dim=0)           
-        feature_maps.append(out2)       
+        feature_maps.append(x)       
         
         x = self.layer3(x)
-        out3 = x.mean(dim=0)        
-        feature_maps.append(out3)       
+        feature_maps.append(x)       
         
         x = self.conv4(x)              
         avg = self.pool4_avg(x)         
         maxx = self.pool4_max(x)        
         x = torch.cat((avg, maxx), 1)  
-        out4 = x.mean(dim=0)            
-        feature_maps.append(out4)       
+        feature_maps.append(x)       
         
         x = x.reshape(x.size(0), -1)
         out = self.clf(x)

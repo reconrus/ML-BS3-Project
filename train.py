@@ -9,8 +9,7 @@ from tqdm import tqdm
 
 from model import Net
 from loss import DiscrLoss
-from plots import plot_accuracies, plot_latent_space
-from tensorboard import Plotting
+from plots import Plotting
 
 
 device = torch.device("cuda")
@@ -50,42 +49,36 @@ def test(test_loader, model):
             logits, feature_maps = model(data)               
             pred = torch.argmax(logits, dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
-            print(type(logits), type(feature_maps))
+
         accuracy = 100 * correct/len(test_loader.dataset)
+    
     return accuracy
 
-def main():
-    DATA_PATH = Path('./data')
-    MNIST_PATH = DATA_PATH / 'mnist/MNIST/processed/test.pt'
-    SVHN_TRAIN_PATH = DATA_PATH / 'svhn/train_32x32.mat'
-    SVHN_TEST_PATH = DATA_PATH / 'svhn/test_32x32.mat'
 
-    pretrain_epochs = 2
-    epochs = 10
-    batch_size = 32
-    pretrain_step_lr_epochs = 3 
-    discr_weight = torch.tensor(0.5).to(device)
-    feature_maps_weights = [0.3, 0.5, 1]
+def visualise_feature_maps(model, test_loader, tag, plotting):
+    feature_maps_all = []
+    target_all = []
 
-    svhn_train, svhn_test, mnist_train, mnist_test = load_datasets()
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            logits, feature_maps = model(data)               
+            feature_maps_all.append(feature_maps[-1])
+            target_all.append(target.cpu().numpy())
 
-    source_train_loader = DataLoader(svhn_train, batch_size=batch_size, shuffle=True, num_workers=1)
-    source_test_loader = DataLoader(svhn_test, batch_size=batch_size, shuffle=True, num_workers=1)
-    target_train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=1)
-    target_test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, num_workers=1)
-    
-    plotting = Plotting()
+    plotting.add_feature_maps(feature_maps_all, target_all, tag)
 
-    model = Net().to(device)
+
+def pretrain(model, epochs, pretrain_step_lr_epochs, loaders, plotting):
+    source_train_loader, source_test_loader, target_train_loader, target_test_loader = loaders
     optim = torch.optim.Adam(model.parameters(), lr=0.001)
     scheduler = torch.optim.lr_scheduler.StepLR(optim, pretrain_step_lr_epochs, gamma=0.1)
     clf_criterion = nn.CrossEntropyLoss()
 
-    # Pretrain
-    train_accuracies = []
-    source_test_accuracies = []
-    target_test_accuracies = []
-    for epoch in range(pretrain_epochs):
+    visualise_feature_maps(model, source_test_loader, "svhn_before_training", plotting)
+    visualise_feature_maps(model, target_test_loader, "mnist_before_training", plotting)
+
+    for epoch in range(epochs):
         epoch_loss = 0
         train_iter = tqdm(source_train_loader, leave=False)
         for step, (data, target) in enumerate(train_iter):
@@ -97,24 +90,43 @@ def main():
             optim.step()
             epoch_loss += loss.item()
             train_iter.set_description(f'Loss: {epoch_loss/(step+1):.4f}')
-            plotting.add_feature_maps(feature_maps[-1], "svhn_pretraining")
 
         train_accuracy = test(source_train_loader, model)
         source_test_accuracy = test(source_test_loader, model)
         target_test_accuracy = test(target_test_loader, model)
         plotting.add_loss(epoch_loss, epoch + 1, "pretraining")
-        plotting.add_accuracies(train_accuracy, source_test_accuracy, target_test_accuracy, "pretraining")
-        # train_accuracies.append(train_accuracy)
-        # source_test_accuracies.append(source_test_accuracy)
-        # target_test_accuracies.append(target_test_accuracy)
+        plotting.add_accuracies(train_accuracy, source_test_accuracy, target_test_accuracy, epoch+1, "pretraining")
+
         print(f"Epoch {epoch+1}: Training loss: {epoch_loss/len(source_train_loader)}")
         print(f"Epoch {epoch+1}: Test accuracy: {target_test_accuracy}")
         
         scheduler.step()
 
-        # plot_latent_space(feature_maps[-1], "pretraining")
+    visualise_feature_maps(model, source_test_loader, "svhn_before_DA", plotting)
+    visualise_feature_maps(model, target_test_loader, "mnist_before_DA", plotting)
 
-    # plot_accuracies(pretrain_epochs, train_accuracies, source_test_accuracies, target_test_accuracies)
+
+def main():
+    pretrain_epochs = 1
+    epochs = 10
+    batch_size = 128
+    pretrain_step_lr_epochs = 3 
+    discr_weight = torch.tensor(0.5).to(device)
+    feature_maps_weights = [0.3, 0.5, 1]
+
+    svhn_train, svhn_test, mnist_train, mnist_test = load_datasets()
+
+    source_train_loader = DataLoader(svhn_train, batch_size=batch_size, shuffle=True, num_workers=1)
+    source_test_loader = DataLoader(svhn_test, batch_size=batch_size, shuffle=True, num_workers=1)
+    target_train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=1)
+    target_test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True, num_workers=1)
+    loaders = (source_train_loader, source_test_loader, target_train_loader, target_test_loader)
+
+    plotting = Plotting()
+
+    model = Net().to(device)
+
+    pretrain(model, pretrain_epochs, pretrain_step_lr_epochs, loaders, plotting)
 
     clf_criterion = nn.CrossEntropyLoss()
     discr_criterion = DiscrLoss(weights=feature_maps_weights)
@@ -156,26 +168,23 @@ def main():
             epoch_loss += loss.item()
 
             train_iter.set_description(f'Classification loss: {epoch_clf_loss/(step+1):.4f} Discriminator loss: {epoch_discr_loss/(step+1):.4f} ')
-            plotting.add_feature_maps(s_feature_maps[-1], "svhn")
-            plotting.add_feature_maps(t_feature_maps[-1], "mnist")
-            # plot_latent_space(s_feature_maps[-1], "training", t_feature_maps)
             
         train_accuracy = test(source_train_loader, model)
         source_test_accuracy = test(source_test_loader, model)
         target_test_accuracy = test(target_test_loader, model)
         plotting.add_loss(epoch_loss, epoch + 1, "training")
-        plotting.add_accuracies(train_accuracy, source_test_accuracy, target_test_accuracy, "training")
-        # train_accuracies.append(train_accuracy)
-        # source_test_accuracies.append(source_test_accuracy)
-        # target_test_accuracies.append(target_test_accuracy)
+        plotting.add_accuracies(train_accuracy, source_test_accuracy, target_test_accuracy, epoch+1, "training")
+
         
         print(f"Epoch {epoch+1}: Training classification loss: {epoch_clf_loss/len(source_train_loader)}")
         print(f"Epoch {epoch+1}: Training discriminator loss: {epoch_discr_loss/len(source_train_loader)}")
         print(f"Epoch {epoch+1}: Test accuracy: {target_test_accuracy}")
 
         scheduler.step()
-        
-    # plot_accuracies(epochs, train_accuracies, source_test_accuracies, target_test_accuracies)
+
+    visualise_feature_maps(model, source_test_loader, "svhn_after_DA", plotting)
+    visualise_feature_maps(model, target_test_loader, "mnist_after_DA", plotting)
+ 
     plotting.close()
 
 if __name__=='__main__':
