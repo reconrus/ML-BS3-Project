@@ -8,7 +8,7 @@ from torchvision import transforms, datasets
 from tqdm import tqdm
 
 from model import Net
-from loss import DiscrLoss
+from loss import DomainLoss
 from plots import Plotting
 
 
@@ -22,7 +22,6 @@ mnist_transformations = transforms.Compose([
                        ])
 
 svhn_transformations = transforms.Compose([ 
-                        #    transforms.Grayscale(),
                            transforms.ToTensor(),
                            transforms.Normalize((0.5,), (0.5,)),
                         ])
@@ -107,11 +106,11 @@ def pretrain(model, epochs, pretrain_step_lr_epochs, loaders, plotting):
 
 
 def main():
-    pretrain_epochs = 1
-    epochs = 10
+    pretrain_epochs = 10
+    epochs = 20
     batch_size = 128
-    pretrain_step_lr_epochs = 3 
-    discr_weight = torch.tensor(0.5).to(device)
+    pretrain_step_lr_epochs = 2
+    domain_weight = torch.tensor(0.5).to(device)
     feature_maps_weights = [0.3, 0.5, 1]
 
     svhn_train, svhn_test, mnist_train, mnist_test = load_datasets()
@@ -129,19 +128,15 @@ def main():
     pretrain(model, pretrain_epochs, pretrain_step_lr_epochs, loaders, plotting)
 
     clf_criterion = nn.CrossEntropyLoss()
-    discr_criterion = DiscrLoss(weights=feature_maps_weights)
+    domain_criterion = DomainLoss(weights=feature_maps_weights)
     optim = torch.optim.Adam(model.parameters(), lr=0.0003) 
-    scheduler = torch.optim.lr_scheduler.StepLR(optim, pretrain_step_lr_epochs, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.StepLR(optim, pretrain_step_lr_epochs, gamma=0.5)
     t_iter = iter(target_train_loader)
-    
-    train_accuracies = []
-    source_test_accuracies = []
-    target_test_accuracies = []
-    
+
     for epoch in range(epochs):
         epoch_loss = 0
         epoch_clf_loss = 0
-        epoch_discr_loss = 0
+        epoch_domain_loss = 0
         train_iter = tqdm(source_train_loader, leave=False)
         for step, (s_inputs, s_labels) in enumerate(train_iter):
             s_inputs = s_inputs.to(device)
@@ -159,15 +154,15 @@ def main():
             t_logits, t_feature_maps = model(t_inputs)
             optim.zero_grad()
             clf_loss = clf_criterion(s_logits, s_labels)
-            discr_loss = discr_criterion(s_feature_maps, t_feature_maps)
-            loss = clf_loss + discr_weight*discr_loss
+            domain_loss = domain_criterion(s_feature_maps, t_feature_maps)
+            loss = clf_loss + domain_weight*domain_loss
             loss.backward()        
             optim.step()  
             epoch_clf_loss += clf_loss.item()
-            epoch_discr_loss += discr_loss.item()
+            epoch_domain_loss += domain_loss.item()
             epoch_loss += loss.item()
 
-            train_iter.set_description(f'Classification loss: {epoch_clf_loss/(step+1):.4f} Discriminator loss: {epoch_discr_loss/(step+1):.4f} ')
+            train_iter.set_description(f'Classification loss: {epoch_clf_loss/(step+1):.4f} Domain loss: {epoch_domain_loss/(step+1):.4f} ')
             
         train_accuracy = test(source_train_loader, model)
         source_test_accuracy = test(source_test_loader, model)
@@ -177,7 +172,7 @@ def main():
 
         
         print(f"Epoch {epoch+1}: Training classification loss: {epoch_clf_loss/len(source_train_loader)}")
-        print(f"Epoch {epoch+1}: Training discriminator loss: {epoch_discr_loss/len(source_train_loader)}")
+        print(f"Epoch {epoch+1}: Training domain loss: {epoch_domain_loss/len(source_train_loader)}")
         print(f"Epoch {epoch+1}: Test accuracy: {target_test_accuracy}")
 
         scheduler.step()

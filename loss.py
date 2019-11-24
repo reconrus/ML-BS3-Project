@@ -2,9 +2,9 @@ import torch
 from torch import nn
 
 
-class DiscrLoss(nn.Module):
+class DomainLoss(nn.Module):
     def __init__(self, weights=None, n_feature_maps=1):
-        super(DiscrLoss, self).__init__()
+        super(DomainLoss, self).__init__()
         self.weights = weights if weights else n_feature_maps*[1]
 
     def forward(self, maps_source, maps_dest):
